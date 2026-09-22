@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover deixa a página ocupar a tela toda no celular -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador de circuitos 2D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&amp;display=swap">
+
+<!-- ═══ CSS: a "roupa" da página. Nada aqui muda a física, só a aparência. ═══
+     As cores ficam em variáveis (--nome). Trocar uma cor aqui troca no site todo.
+     🔎 Pesquise: "CSS custom properties", "CSS flexbox", "prefers-color-scheme" -->
+<style>
+  /* Tema claro (padrão) */
+  :root {
+    color-scheme: light;
+    --bg: #eaf1f6;          /* fundo da área de trabalho */
+    --grade: #d6e2ec;       /* linhas finas da grade */
+    --grade2: #c3d3e0;      /* linhas grossas da grade (a cada 100px) */
+    --painel: #ffffff;
+    --borda: #d3dce4;
+    --hover: #f0f5f9;
+    --texto: #1d2b38;
+    --mudo: #61707e;
+    --acento: #0a7bd1;
+    --acento-suave: #e2f1fc;
+    --verde: #1f9d55;
+    --vermelho: #d64545;
+    --amarelo: #d99a00;
+    box-sizing: border-box;
+    /* protege o conteúdo das "barras" do celular (notch, barra de gestos) */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  /* Tema escuro: automático se o aparelho estiver no escuro */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #161d25; --grade: #212c37; --grade2: #2b3946; --painel: #1e2731; --borda: #33414f;
+      --hover: #27323e; --texto: #e6edf3; --mudo: #9aabba; --acento: #4aa8ff; --acento-suave: #1c3a55;
+      --verde: #2fb26a; --vermelho: #ef6a6a; --amarelo: #f0b429;
+    }
+  }
+  /* Mesmo tema escuro, pra quando o visualizador força o escuro */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #161d25; --grade: #212c37; --grade2: #2b3946; --painel: #1e2731; --borda: #33414f;
+    --hover: #27323e; --texto: #e6edf3; --mudo: #9aabba; --acento: #4aa8ff; --acento-suave: #1c3a55;
+    --verde: #2fb26a; --vermelho: #ef6a6a; --amarelo: #f0b429;
+  }
+
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--texto);
+    font: 14px/1.45 'Open Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  }
+  [hidden] { display: none !important; }
+
+  /* Layout geral: barra em cima, e embaixo "área de trabalho + painel". Flexbox empilha e reparte o espaço. */
+  #app { height: 100%; display: flex; flex-direction: column; user-select: none; -webkit-user-select: none; }
+  #corpo { flex: 1; min-height: 0; display: flex; }
+  #area { position: relative; flex: 1; min-width: 0; overflow: hidden; }
+  #tela { display: block; width: 100%; height: 100%; touch-action: none; background: var(--bg); }
+
+  /* Barra de cima */
+  #barra {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    padding: 8px 12px; background: var(--painel); border-bottom: 1px solid var(--borda);
+  }
+  .marca { font-weight: 700; color: var(--acento); margin-right: 6px; white-space: nowrap; }
+  .grupo { display: flex; align-items: center; gap: 6px; }
+  .sep { width: 1px; align-self: stretch; background: var(--borda); margin: 2px 2px; }
+  .direita { margin-left: auto; }
+
+  button, select { font: inherit; color: var(--texto); }
+  .btn {
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 6px;
+    padding: 6px 11px; cursor: pointer; white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.ativo { background: var(--acento-suave); border-color: var(--acento); color: var(--acento); font-weight: 600; }
+  .btn.icone { padding: 6px 10px; min-width: 34px; }
+  .btn-sim { background: var(--verde); border-color: var(--verde); color: #fff; font-weight: 700; padding: 7px 14px; }
+  .btn-sim:hover:not(:disabled) { background: var(--verde); filter: brightness(1.08); }
+  .btn-sim.ligado { background: var(--vermelho); border-color: var(--vermelho); }
+  select {
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; padding: 6px 8px;
+  }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+  label.check { display: flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+
+  /* Bolinhas de cor do fio */
+  .cor { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--painel); box-shadow: 0 0 0 1px var(--borda); cursor: pointer; padding: 0; }
+  .cor.ativa { box-shadow: 0 0 0 2px var(--acento); }
+
+  /* Dicas e avisos por cima da área de trabalho */
+  #dicas {
+    position: absolute; left: 12px; top: 12px; width: min(310px, calc(100% - 24px));
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 10px;
+    padding: 12px 14px; box-shadow: 0 4px 16px rgba(0, 0, 0, .12); font-size: 13px;
+  }
+  #dicas strong { display: block; margin-bottom: 4px; padding-right: 22px; }
+  #dicas ol { margin: 0 0 8px; padding-left: 20px; }
+  #dicas p { margin: 0; color: var(--mudo); }
+  #dicas .x { position: absolute; right: 6px; top: 4px; background: none; border: 0; font-size: 20px; line-height: 1; cursor: pointer; color: var(--mudo); padding: 4px 8px; }
+  #status { position: absolute; left: 12px; right: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+  .chip {
+    align-self: flex-start; max-width: 680px; background: var(--painel); border: 1px solid var(--borda);
+    border-left: 4px solid var(--mudo); border-radius: 8px; padding: 8px 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, .1);
+  }
+  .chip.erro { border-left-color: var(--vermelho); }
+  .chip.aviso { border-left-color: var(--amarelo); }
+  .chip.info { border-left-color: var(--acento); }
+  .chip.ok { border-left-color: var(--verde); }
+
+  /* Painel da direita */
+  #painel { width: 250px; flex: none; background: var(--painel); border-left: 1px solid var(--borda); overflow: auto; padding: 14px; }
+  #painel h2 { font-size: 13px; font-weight: 700; margin: 0 0 10px; }
+  #paleta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 22px; }
+  .item {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 6px;
+    background: var(--bg); border: 1px solid var(--borda); border-radius: 8px; cursor: grab; touch-action: none;
+  }
+  .item:hover { border-color: var(--acento); }
+  .item span { font-size: 12px; color: var(--mudo); }
+  #propVazio { margin: 0; color: var(--mudo); font-size: 13px; }
+  #pNome { font-weight: 700; margin-bottom: 8px; }
+  .linha { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  #leituras { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; margin: 10px 0 12px; font-size: 13px; }
+  #leituras dt { color: var(--mudo); }
+  #leituras dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+  .acoes { display: flex; gap: 6px; }
+
+  /* Celular / janela estreita: o painel vai pra baixo */
+  @media (max-width: 760px) {
+    #corpo { flex-direction: column; }
+    #painel { width: auto; max-height: 40%; border-left: 0; border-top: 1px solid var(--borda); }
+    #paleta { grid-template-columns: repeat(4, 1fr); margin-bottom: 14px; }
+    .item svg { width: 52px; height: 52px; }
+    .direita { margin-left: 0; }
+  }
+
+  /* ── Estilos das formas dentro do SVG (o JavaScript só põe as classes) ── */
+  svg text { font-family: 'Open Sans', system-ui, sans-serif; }
+  .g1 { stroke: var(--grade); }
+  .g2 { stroke: var(--grade2); }
+  .perna { stroke: #8b97a3; stroke-width: 4; stroke-linecap: round; }
+  .haste { stroke: #9aa5b1; stroke-width: 6; }
+  .fio-borda { stroke: rgba(0, 0, 0, .4); stroke-width: 6.5; stroke-linecap: round; }
+  .fio { stroke-width: 4; stroke-linecap: round; }
+  .fio-realce { stroke: var(--acento); stroke-opacity: .45; stroke-width: 13; stroke-linecap: round; }
+  .fio-realce.leve { stroke-opacity: .25; stroke-width: 11; }
+  .selecao { fill: none; stroke: var(--acento); stroke-width: 2; stroke-dasharray: 7 5; }
+  .anel { fill: none; stroke: var(--acento); stroke-width: 3; }
+  .tag { fill: var(--painel); stroke: var(--borda); }
+  .tag-txt { font-size: 11px; font-weight: 600; fill: var(--texto); }
+  .tag-erro { fill: var(--vermelho); stroke: var(--vermelho); }
+  .tag-erro + .tag-txt { fill: #fff; }
+</style>
+</head>
+
+<body>
+<!-- ═══ HTML: o esqueleto. Cada <div>, <button> etc. é uma "caixa" na página.
+     O atributo id="..." dá um nome pra caixa, e é assim que o JavaScript acha ela. ═══ -->
+<div id="app">
+
+  <!-- Barra de ferramentas -->
+  <header id="barra">
+    <span class="marca">Simulador de circuitos</span>
+
+    <div class="grupo">
+      <button id="btnSel" class="btn ativo" type="button" title="Selecionar e mover (V)">Selecionar</button>
+      <button id="btnFio" class="btn" type="button" title="Modo fio: começa um fio de qualquer lugar (W)">Fio</button>
+    </div>
+    <div class="grupo" id="cores" role="group" aria-label="Cor do fio"></div>
+
+    <span class="sep"></span>
+
+    <div class="grupo">
+      <button id="btnGirar" class="btn" type="button" title="Girar 90° (R)">Girar</button>
+      <button id="btnExcluir" class="btn" type="button" title="Excluir (Delete)">Excluir</button>
+      <button id="btnDesfazer" class="btn" type="button" title="Desfazer (Ctrl+Z)">Desfazer</button>
+      <button id="btnLimpar" class="btn" type="button" title="Apaga tudo (dá pra desfazer)">Limpar tudo</button>
+    </div>
+
+    <span class="sep"></span>
+
+    <div class="grupo">
+      <button id="btnZoomMenos" class="btn icone" type="button" title="Diminuir zoom" aria-label="Diminuir zoom">−</button>
+      <button id="btnZoomMais" class="btn icone" type="button" title="Aumentar zoom" aria-label="Aumentar zoom">+</button>
+      <button id="btnAjustar" class="btn" type="button" title="Enquadrar o circuito na tela">Enquadrar</button>
+      <label class="check"><input id="chkValores" type="checkbox" checked> Mostrar valores</label>
+    </div>
+
+    <div class="grupo direita">
+      <select id="selExemplos" aria-label="Exemplos prontos">
+        <option value="">Exemplos…</option>
+        <option value="serie">Lâmpadas em série</option>
+        <option value="paralelo">Lâmpadas em paralelo</option>
+        <option value="led">LED com resistor</option>
+      </select>
+      <button id="btnAjuda" class="btn icone" type="button" title="Mostrar / esconder as dicas" aria-label="Dicas">?</button>
+      <button id="btnSim" class="btn btn-sim" type="button">▶ Iniciar simulação</button>
+    </div>
+  </header>
+
+  <div id="corpo">
+
+    <!-- Área de trabalho: um SVG (folha de desenho) -->
+    <main id="area">
+      <svg id="tela" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Área de montagem do circuito">
+        <defs>
+          <!-- Grade: um quadradinho de 20px que se repete (pattern) -->
+          <pattern id="gradeFina" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M20 0H0V20" fill="none" class="g1" stroke-width="1"/>
+          </pattern>
+          <pattern id="gradeGrossa" width="100" height="100" patternUnits="userSpaceOnUse">
+            <path d="M100 0H0V100" fill="none" class="g2" stroke-width="1"/>
+          </pattern>
+          <!-- Desfoque usado no brilho das lâmpadas e LEDs -->
+          <filter id="desfoque" x="-70%" y="-70%" width="240%" height="240%">
+            <feGaussianBlur stdDeviation="9"/>
+          </filter>
+        </defs>
+        <!-- #mundo é movido/ampliado pelo pan e zoom; #cena é redesenhada pelo JavaScript -->
+        <g id="mundo">
+          <rect x="-4000" y="-4000" width="8000" height="8000" fill="url(#gradeFina)"/>
+          <rect x="-4000" y="-4000" width="8000" height="8000" fill="url(#gradeGrossa)"/>
+          <g id="cena"></g>
+        </g>
+      </svg>
+
+      <div id="dicas">
+        <button id="fecharDicas" class="x" type="button" aria-label="Fechar dicas">×</button>
+        <strong>Como montar um circuito</strong>
+        <ol>
+          <li>Arraste um componente do painel da direita para a área de trabalho.</li>
+          <li>Arraste a partir da bolinha de um terminal para puxar um fio.</li>
+          <li>Solte a ponta do fio sobre outro fio ou terminal para ligar os dois. Uma bolinha escura marca a junção.</li>
+          <li>Clique em “Iniciar simulação”.</li>
+        </ol>
+        <p>Fios que apenas se cruzam não se ligam. No modo Fio (W) dá pra começar um fio a partir de outro fio ou do espaço vazio. Esc encerra o fio; Ctrl+Z desfaz.</p>
+      </div>
+
+      <div id="status" aria-live="polite"></div>
+    </main>
+
+    <!-- Painel da direita: paleta de componentes + detalhes do selecionado -->
+    <aside id="painel">
+      <h2>Componentes</h2>
+      <div id="paleta"></div>
+
+      <h2>Detalhes</h2>
+      <p id="propVazio"></p>
+      <div id="propComp" hidden>
+        <div id="pNome"></div>
+        <label class="linha" id="linhaRes">Resistência <select id="selRes"></select></label>
+        <label class="linha" id="linhaCor">Cor do LED <select id="selCor"></select></label>
+        <dl id="leituras"></dl>
+        <div class="acoes">
+          <button class="btn" type="button" onclick="girarSel(); pedirDesenho();">Girar</button>
+          <button class="btn" type="button" onclick="excluirSel(); pedirDesenho();">Excluir</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ═════════════════════════════════════════════════════════════════════
+   SIMULADOR DE CIRCUITOS 2D — mapa do código
+
+   Este arquivo é uma tela SVG + um "cérebro" de física. Está dividido em:
+
+     1. Constantes ........ valores dos componentes (9V, lâmpada, LED...)
+     2. Estado ............ onde ficam guardados o circuito e a interface
+     3. Geometria ......... posição dos terminais, rotação, distâncias
+     4. Fios e pontos ..... a estrutura que deixa ligar fio em fio
+     5. Física ............ Ohm + Kirchhoff (o cérebro da simulação)
+     6. Exemplos .......... circuitos prontos (série, paralelo, LED)
+     7. Desenho ........... transforma o estado em imagem SVG
+     8. Mouse e teclado ... arrastar, ligar fios, atalhos
+     9. Painéis e início .. botões, painel lateral, arranque
+
+   Comentários com 🔎 são dicas de termos pra você pesquisar depois.
+   ═════════════════════════════════════════════════════════════════════ */
+
+
+/* ═══════════════ 1. CONSTANTES ═══════════════ */
+
+// Cada componente tem 2 terminais (as "perninhas"). As posições abaixo são
+// relativas ao CENTRO do componente com ele na posição original (rot = 0).
+//   term  = [[x,y] do terminal 0, [x,y] do terminal 1]
+//   caixa = [x0,y0,x1,y1] → a área onde o mouse "agarra" o componente
+// Bateria: terminal 0 = (+), terminal 1 = (−).  LED: 0 = ânodo (+), 1 = cátodo (−).
+const TIPOS = {
+  bateria:  { nome: 'Bateria 9V', term: [[-20, -60], [20, -60]], caixa: [-30, -52, 30, 58] },
+  lampada:  { nome: 'Lâmpada',    term: [[-60, 0], [60, 0]],     caixa: [-34, -34, 34, 34] },
+  led:      { nome: 'LED',        term: [[-40, 0], [40, 0]],     caixa: [-24, -24, 24, 24] },
+  resistor: { nome: 'Resistor',   term: [[-40, 0], [40, 0]],     caixa: [-28, -16, 28, 16] }
+};
+
+// Bateria de 9V de verdade tem uma resistência interna (1 a 2 Ω numa alcalina).
+// É ela que faz a tensão "cair" um pouquinho quando você puxa muita corrente.
+const BATERIA = { V: 9, rInterna: 1.5 };
+
+// Lâmpada de 9V que consome 100 mA → pela Lei de Ohm: R = V / I = 90 Ω
+const LAMPADA = { V: 9, I: 0.1 };
+LAMPADA.R = LAMPADA.V / LAMPADA.I;
+
+// Cada cor de LED começa a conduzir numa tensão diferente (Vf = "tensão direta").
+const LEDS = {
+  vermelho: { Vf: 2.0, cor: '#ff3b30' },
+  amarelo:  { Vf: 2.1, cor: '#ffcc00' },
+  verde:    { Vf: 2.2, cor: '#2ecc71' },
+  azul:     { Vf: 3.0, cor: '#2f80ff' },
+  branco:   { Vf: 3.0, cor: '#fff3c4' }
+};
+const LED_I_NOM = 0.020;        // 20 mA: corrente "normal" de um LED
+const LED_I_MAX = 0.050;        // acima de 50 mA ele queima
+const RESISTOR_P_MAX = 0.5;     // resistor de 1/4 W: queima com o dobro disso
+const RESISTORES = [100, 220, 330, 470, 680, 1000, 2200, 4700, 10000];
+
+// Ajustes numéricos do solver (nada a ver com o circuito real)
+const N_VT = 0.08;      // "curvatura" do LED (fator de idealidade × tensão térmica)
+const G_SHUNT = 1e-9;   // vazamento minúsculo de cada nó pra "terra" (evita matriz travar)
+const G_MIN = 1e-12;    // idem, dentro do LED
+
+const CORES_FIO = {
+  vermelho: '#d64545', preto: '#2b2f36', azul: '#2f6fdd',
+  verde: '#2e9e5b', amarelo: '#e0b400', laranja: '#ee7d1f'
+};
+// Código de cores dos resistores: o índice é o dígito (0 = preto ... 9 = branco)
+const CORES_BANDA = ['#111', '#7a4a21', '#d62828', '#f77f00', '#f7d51d', '#2e9e5b', '#2f6fdd', '#8e44ad', '#8a8f98', '#f5f5f5'];
+
+
+/* ═══════════════ 2. ESTADO ═══════════════ */
+
+// S = o circuito em si. É só um monte de dados simples (objetos indexados por id),
+// então dá pra salvar como texto (JSON) — é assim que funcionam o "desfazer"
+// e o salvamento automático.
+//   comps  : componentes  {id, tipo, x, y, rot, ...}
+//   pontos : pontos dos fios {id, x, y, attach}
+//            attach = {comp, term} quando o ponto está preso a um terminal
+//   fios   : segmentos RETOS entre dois pontos {id, a, b, cor}
+let S = novoEstado();
+function novoEstado() { return { comps: {}, pontos: {}, fios: {}, prox: 1 }; }
+const novoId = () => S.prox++;
+
+// U = estado da interface (o que NÃO faz parte do circuito salvo)
+const U = {
+  modo: 'selecionar',   // 'selecionar' ou 'fio'
+  sel: null,            // {tipo:'comp'|'fio', id}
+  fio: null,            // fio que está sendo desenhado agora
+  arrasto: null,        // o que o mouse está arrastando agora
+  hover: null,          // o que está debaixo do mouse
+  simulando: false,
+  res: null,            // resultado da última simulação
+  avisos: [],
+  queimados: {},        // id do componente → texto explicando por que queimou
+  cor: 'vermelho',      // cor dos próximos fios
+  view: { tx: 40, ty: 40, k: 1 },   // pan (tx,ty) e zoom (k)
+  mostrarValores: true
+};
+
+
+/* ═══════════════ 3. GEOMETRIA ═══════════════ */
+
+const snap = (v, g = 10) => Math.round(v / g) * g;   // "imã" da grade
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// Gira um ponto (x,y) em "quartos de volta" (rot = 0, 1, 2 ou 3 → 0°, 90°, 180°, 270°).
+// Na tela o eixo y cresce pra BAIXO, então 90° aqui é sentido horário.
+function girar(x, y, rot) {
+  switch (rot & 3) {
+    case 0: return [x, y];
+    case 1: return [-y, x];
+    case 2: return [-x, -y];
+    default: return [y, -x];
+  }
+}
+
+// Posição, no mundo, do terminal i do componente c (já considerando a rotação)
+function posTerminal(c, i) {
+  const [dx, dy] = TIPOS[c.tipo].term[i];
+  const [rx, ry] = girar(dx, dy, c.rot);
+  return { x: c.x + rx, y: c.y + ry };
+}
+
+// Um ponto preso a um terminal sempre "segue" o terminal quando você move o
+// componente. Por isso a posição dele é calculada na hora, não guardada.
+function posPonto(p) {
+  if (p.attach) return posTerminal(S.comps[p.attach.comp], p.attach.term);
+  return { x: p.x, y: p.y };
+}
+
+// Retângulo (já girado) que envolve o componente e as perninhas
+function limitesComp(c) {
+  const t = TIPOS[c.tipo], [x0, y0, x1, y1] = t.caixa;
+  const cantos = [[x0, y0], [x1, y0], [x1, y1], [x0, y1], ...t.term];
+  let mnx = 1e9, mny = 1e9, mxx = -1e9, mxy = -1e9;
+  for (const [px, py] of cantos) {
+    const [rx, ry] = girar(px, py, c.rot);
+    mnx = Math.min(mnx, rx); mxx = Math.max(mxx, rx);
+    mny = Math.min(mny, ry); mxy = Math.max(mxy, ry);
+  }
+  return { x0: c.x + mnx - 10, y0: c.y + mny - 10, x1: c.x + mxx + 10, y1: c.y + mxy + 10 };
+}
+
+// Menor distância entre o ponto (px,py) e o segmento a→b, e o ponto do segmento
+// mais próximo ("projeção"). É isso que permite clicar num fio e ligar outro nele.
+// 🔎 Pesquise: "distância de ponto a segmento", "projeção ortogonal"
+function distPontoSegmento(px, py, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - a.x) * dx + (py - a.y) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const x = a.x + t * dx, y = a.y + t * dy;
+  return { d: Math.hypot(px - x, py - y), x, y };
+}
+
+
+/* ═══════════════ 4. FIOS E PONTOS ═══════════════
+   A ideia que resolve o problema do Tinkercad:
+
+   • Todo fio é um segmento reto entre DOIS PONTOS.
+   • Um ponto pode estar preso num terminal, ou solto no ar.
+   • Quando dois fios compartilham o MESMO ponto, eles estão ligados.
+   • Soltar a ponta de um fio EM CIMA de outro fio parte o fio de baixo em
+     dois e cria um ponto novo no meio (a "junção"). As três pontas agora
+     dividem esse ponto → estão ligadas eletricamente.
+   • Fios que só se cruzam, sem compartilhar ponto, NÃO se ligam (como na vida real).
+   ═══════════════════════════════════════════════ */
+
+function novoComp(tipo, x, y, rot = 0) {
+  const id = novoId();
+  const c = { id, tipo, x, y, rot };
+  if (tipo === 'resistor') c.ohms = 330;
+  if (tipo === 'led') c.cor = 'vermelho';
+  S.comps[id] = c;
+  return c;
+}
+
+function criarPonto(x, y, attach = null) {
+  const id = novoId();
+  S.pontos[id] = { id, x, y, attach };
+  return id;
+}
+
+function criarFio(a, b, cor) {
+  const id = novoId();
+  S.fios[id] = { id, a, b, cor };
+  return id;
+}
+
+const fiosDoPonto = id => Object.values(S.fios).filter(f => f.a === id || f.b === id);
+
+// Parte um fio em dois no ponto (x,y). Devolve o id do ponto novo do meio.
+function dividirFio(fioId, x, y) {
+  const f = S.fios[fioId];
+  const novo = criarPonto(x, y);
+  const fimAntigo = f.b;
+  f.b = novo;                         // o fio original agora termina no ponto novo
+  criarFio(novo, fimAntigo, f.cor);   // e um fio novo continua até o fim antigo
+  return novo;
+}
+
+// Junta dois pontos em um só: tudo que usava "remover" passa a usar "manter"
+function fundirPontos(manter, remover) {
+  for (const f of Object.values(S.fios)) {
+    if (f.a === remover) f.a = manter;
+    if (f.b === remover) f.b = manter;
+  }
+  const pr = S.pontos[remover], pm = S.pontos[manter];
+  if (pr.attach && !pm.attach) pm.attach = pr.attach;
+  delete S.pontos[remover];
+  removerFiosInuteis();
+}
+
+// Fio com as duas pontas no mesmo ponto não serve pra nada
+function removerFiosInuteis() {
+  for (const f of Object.values(S.fios)) if (f.a === f.b) delete S.fios[f.id];
+}
+
+// Ponto sem nenhum fio saindo dele é lixo (esteja preso num terminal ou não)
+function limparPontosSoltos() {
+  const usados = new Set();
+  for (const f of Object.values(S.fios)) { usados.add(f.a); usados.add(f.b); }
+  for (const p of Object.values(S.pontos)) if (!usados.has(p.id)) delete S.pontos[p.id];
+}
+
+// Pra quem usa, "um fio" é o trecho inteiro entre duas coisas "de verdade"
+// (terminal, ponta solta ou junção). As dobras (pontos com só 2 fios) não contam.
+// Essa função anda pelas dobras e devolve TODOS os segmentos desse trecho.
+function cadeiaDoFio(fioId) {
+  const achados = new Set([fioId]);
+  const andar = (pontoId, fio) => {
+    let p = pontoId, atual = fio;
+    for (;;) {
+      if (S.pontos[p].attach) break;
+      const ligados = fiosDoPonto(p);
+      if (ligados.length !== 2) break;          // ponta solta ou junção: acabou
+      const prox = ligados.find(f => f.id !== atual.id);
+      if (achados.has(prox.id)) break;
+      achados.add(prox.id);
+      p = prox.a === p ? prox.b : prox.a;
+      atual = prox;
+    }
+  };
+  const f = S.fios[fioId];
+  andar(f.a, f);
+  andar(f.b, f);
+  return [...achados];
+}
+
+
+/* ═══════════════ 5. FÍSICA ═══════════════
+   Como o simulador calcula (Análise Nodal):
+
+   1. Todos os pontos ligados por fio ou presos no mesmo terminal formam UM "nó"
+      (fio ideal = mesma tensão em todo lugar).
+   2. Cada nó vira uma linha de uma matriz. A linha diz a Lei de Kirchhoff das
+      Correntes: "tudo que chega no nó = tudo que sai".
+   3. A corrente de cada componente vem da Lei de Ohm: I = (Va − Vb) / R.
+   4. Resolvo o sistema (eliminação de Gauss) e saem as tensões de todos os nós.
+      A Lei de Kirchhoff das Tensões vem "de graça": como cada nó tem UMA tensão,
+      a soma das quedas em qualquer laço fecha em zero.
+   5. O LED não segue Ohm (curva exponencial). Pra ele, chuto uma tensão, calculo
+      e vou refinando — método de Newton-Raphson.
+
+   🔎 Pesquise: "análise nodal", "leis de Kirchhoff", "método de Newton-Raphson",
+      "equação de Shockley do diodo", "modelo de Thévenin e Norton"
+   ═══════════════════════════════════════════════ */
+
+// Passo 1: descobrir quais terminais estão no mesmo nó.
+// Usa "union-find": cada coisa começa sozinha no seu grupo e vou fundindo grupos.
+// 🔎 Pesquise: "union-find" / "disjoint set"
+function montarRede() {
+  const pai = {};
+  const achar = k => {
+    if (!(k in pai)) pai[k] = k;
+    while (pai[k] !== k) { pai[k] = pai[pai[k]]; k = pai[k]; }
+    return k;
+  };
+  const unir = (a, b) => { pai[achar(a)] = achar(b); };
+
+  for (const f of Object.values(S.fios)) unir('p' + f.a, 'p' + f.b);          // fio liga seus 2 pontos
+  for (const p of Object.values(S.pontos))
+    if (p.attach) unir('p' + p.id, 't' + p.attach.comp + '.' + p.attach.term); // ponto preso = terminal
+
+  // Dou um número (0, 1, 2...) pra cada nó que aparece de fato num componente
+  const indice = {};
+  let N = 0;
+  const no = k => { const r = achar(k); if (!(r in indice)) indice[r] = N++; return indice[r]; };
+
+  const elementos = Object.values(S.comps).map(c => ({
+    c, a: no('t' + c.id + '.0'), b: no('t' + c.id + '.1')
+  }));
+  return { elementos, N };
+}
+
+// Curva do LED: I = Is · (e^(V/nVt) − 1). Escolho "Is" pra que o LED dê
+// exatamente 20 mA quando estiver na tensão Vf da cor dele.
+const _isCache = {};
+function diodo(cor, vd) {
+  if (!_isCache[cor]) _isCache[cor] = LED_I_NOM / (Math.exp(LEDS[cor].Vf / N_VT) - 1);
+  const Is = _isCache[cor];
+  const ex = Math.exp(Math.min(vd, 4) / N_VT);     // min(...) evita número gigante demais
+  return { i: Is * (ex - 1) + G_MIN * vd,           // corrente pela tensão vd
+           g: Is * ex / N_VT + G_MIN };             // g = inclinação da curva (dI/dV)
+}
+
+// Passo 4: resolve o sistema linear A·x = b por eliminação de Gauss com pivô parcial.
+// 🔎 Pesquise: "eliminação de Gauss com pivotamento parcial"
+function resolverSistema(A, b) {
+  const n = b.length;
+  const M = A.map((linha, i) => [...linha, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let piv = col;                                   // acha a linha com o maior valor na coluna
+    for (let r = col + 1; r < n; r++) if (Math.abs(M[r][col]) > Math.abs(M[piv][col])) piv = r;
+    [M[col], M[piv]] = [M[piv], M[col]];
+    const d = M[col][col];
+    if (Math.abs(d) < 1e-30) continue;
+    for (let r = col + 1; r < n; r++) {              // zera tudo abaixo do pivô
+      const f = M[r][col] / d;
+      if (f !== 0) for (let c = col; c <= n; c++) M[r][c] -= f * M[col][c];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {                 // substituição de trás pra frente
+    let s = M[i][n];
+    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+    x[i] = s / M[i][i];
+  }
+  return x;
+}
+
+// Monta e resolve o circuito. Devolve {idDoComponente: {v, i, p}}
+//   v = tensão no componente, i = corrente, p = potência (v·i)
+function resolver(rede) {
+  const { elementos, N } = rede;
+  const v = new Array(N).fill(0);                    // tensão de cada nó (chute inicial: 0)
+  const leds = elementos.filter(e => e.c.tipo === 'led' && !U.queimados[e.c.id]);
+
+  for (let volta = 0; volta < 300; volta++) {
+    // G · v = b  →  G = condutâncias (1/R), b = correntes injetadas nos nós
+    const G = Array.from({ length: N }, () => new Array(N).fill(0));
+    const b = new Array(N).fill(0);
+    for (let k = 0; k < N; k++) G[k][k] += G_SHUNT;
+
+    // "Carimbo" de um elemento de condutância g entre os nós a e c.
+    // É a Lei de Ohm escrita em forma de matriz: corrente = g · (Va − Vc)
+    const carimbar = (a, c, g) => { G[a][a] += g; G[c][c] += g; G[a][c] -= g; G[c][a] -= g; };
+
+    for (const e of elementos) {
+      const { c, a, b: nb } = e;
+      if (c.tipo === 'bateria') {
+        // Bateria = fonte de 9V com resistência interna em série. Truque de
+        // Norton: vira uma fonte de corrente (V/r) em paralelo com 1/r.
+        const g = 1 / BATERIA.rInterna;
+        carimbar(a, nb, g);
+        b[a] += BATERIA.V * g;
+        b[nb] -= BATERIA.V * g;
+      } else if (U.queimados[c.id]) {
+        // componente queimado = circuito aberto: não carimba nada
+      } else if (c.tipo === 'lampada') {
+        carimbar(a, nb, 1 / LAMPADA.R);
+      } else if (c.tipo === 'resistor') {
+        carimbar(a, nb, 1 / c.ohms);
+      } else if (c.tipo === 'led') {
+        // Newton-Raphson: troco a curva por uma retinha tangente no ponto atual.
+        //   I ≈ g·V + Ieq
+        const vd = v[a] - v[nb];
+        const d = diodo(c.cor, vd);
+        const ieq = d.i - d.g * vd;
+        carimbar(a, nb, d.g);
+        b[a] -= ieq;
+        b[nb] += ieq;
+      }
+    }
+
+    const vn = resolverSistema(G, b);
+    if (!leds.length) { for (let k = 0; k < N; k++) v[k] = vn[k]; break; }   // sem LED não precisa repetir
+
+    // Com LED, a curva exponencial é "brava": se eu pular direto pro chute novo,
+    // a conta explode. Então limito o passo do LED a 0,1 V por volta.
+    let dMax = 0, dLed = 0;
+    for (let k = 0; k < N; k++) dMax = Math.max(dMax, Math.abs(vn[k] - v[k]));
+    for (const e of leds) dLed = Math.max(dLed, Math.abs((vn[e.a] - vn[e.b]) - (v[e.a] - v[e.b])));
+    const alfa = dLed > 0.1 ? 0.1 / dLed : 1;
+    for (let k = 0; k < N; k++) v[k] += alfa * (vn[k] - v[k]);
+    if (alfa === 1 && dMax < 1e-7) break;            // parou de mudar → achei a resposta
+  }
+
+  // Com as tensões dos nós em mãos, calculo o que cada componente está vivendo
+  const res = {};
+  for (const e of elementos) {
+    const { c } = e;
+    const vab = v[e.a] - v[e.b];
+    let i = 0;
+    if (c.tipo === 'bateria') {
+      i = (BATERIA.V - vab) / BATERIA.rInterna;     // corrente que SAI do terminal (+)
+      res[c.id] = { v: vab, i, p: vab * i };
+      continue;
+    }
+    if (!U.queimados[c.id]) {
+      if (c.tipo === 'lampada') i = vab / LAMPADA.R;
+      else if (c.tipo === 'resistor') i = vab / c.ohms;
+      else if (c.tipo === 'led') i = diodo(c.cor, vab).i;
+    }
+    // Lâmpada e resistor não têm "lado certo": mostro valores positivos
+    const simetrico = c.tipo !== 'led';
+    res[c.id] = { v: simetrico ? Math.abs(vab) : vab, i: simetrico ? Math.abs(i) : i, p: Math.abs(vab * i) };
+  }
+  return res;
+}
+
+// Roda a simulação inteira. Se algum componente passar do limite, ele queima
+// (vira circuito aberto) e eu resolvo de novo — um de cada vez, o mais
+// sobrecarregado primeiro, porque na vida real o mais fraco morre antes.
+function simular() {
+  for (const id of Object.keys(U.queimados)) if (!S.comps[id]) delete U.queimados[id];
+  const rede = montarRede();
+  let res = resolver(rede);
+  for (let volta = 0; volta < 12; volta++) {
+    let pior = null, maior = 1;
+    for (const c of Object.values(S.comps)) {
+      if (U.queimados[c.id]) continue;
+      const r = res[c.id];
+      let excesso = 0;                                           // 1 = exatamente no limite
+      if (c.tipo === 'led') excesso = r.i / LED_I_MAX;
+      else if (c.tipo === 'lampada') excesso = r.p / (LAMPADA.V * LAMPADA.I * 2.25);
+      else if (c.tipo === 'resistor') excesso = r.p / RESISTOR_P_MAX;
+      if (excesso > maior) { maior = excesso; pior = c; }
+    }
+    if (!pior) break;
+    U.queimados[pior.id] = textoQueima(pior, res[pior.id]);
+    res = resolver(rede);
+  }
+  U.res = res;
+  U.avisos = gerarAvisos(res);
+}
+
+function textoQueima(c, r) {
+  if (c.tipo === 'led') return `O LED queimou! Passaram ${fmtI(r.i)} por ele (o limite é ~50 mA). Coloque um resistor em série pra limitar a corrente.`;
+  if (c.tipo === 'lampada') return `A lâmpada queimou! Ela aguenta 9 V e recebeu ${fmtV(r.v)}.`;
+  return `O resistor queimou! Ele dissipou ${fmtP(r.p)} (o limite é 0,5 W). Use um valor de resistência maior.`;
+}
+
+// Mensagens que aparecem na barra de baixo enquanto a simulação roda
+function gerarAvisos(res) {
+  const av = [];
+  for (const id in U.queimados) av.push({ nivel: 'erro', texto: U.queimados[id] });
+  const bats = Object.values(S.comps).filter(c => c.tipo === 'bateria');
+  if (!bats.length) {
+    av.push({ nivel: 'info', texto: 'Adicione uma bateria de 9V pra alimentar o circuito.' });
+  } else if (bats.some(b => res[b.id].i > 1)) {
+    av.push({ nivel: 'erro', texto: `Curto-circuito! Tem um caminho sem nenhuma resistência entre + e −: a bateria está fornecendo ${fmtI(Math.max(...bats.map(b => res[b.id].i)))}.` });
+  } else if (!Object.keys(U.queimados).length && bats.every(b => Math.abs(res[b.id].i) < 1e-5)) {
+    av.push({ nivel: 'info', texto: 'Nenhuma corrente circulando: o circuito está aberto. Falta fechar o caminho entre o + e o − da bateria.' });
+  }
+  for (const c of Object.values(S.comps)) {
+    if (U.queimados[c.id]) continue;
+    const r = res[c.id];
+    if (c.tipo === 'led' && r.v < -0.5) av.push({ nivel: 'aviso', texto: 'Um LED está ligado ao contrário: o ânodo (+) precisa ficar do lado positivo da bateria.' });
+    if (c.tipo === 'resistor' && r.p > 0.25) av.push({ nivel: 'aviso', texto: `Um resistor está esquentando (${fmtP(r.p)}). O limite normal é 0,25 W.` });
+  }
+  return av;
+}
+
+
+/* ── formatação dos números (vírgula, unidades) ── */
+const fmt = (x, casas = 2) => x.toFixed(casas).replace('.', ',');
+const zero = x => (Math.abs(x) < 1e-5 ? 0 : x);
+function fmtV(v) { return fmt(zero(v), 2) + ' V'; }
+function fmtI(i) {
+  i = zero(i);
+  if (Math.abs(i) >= 1) return fmt(i, 2) + ' A';
+  const m = i * 1000, a = Math.abs(m);
+  return fmt(m, a >= 100 ? 0 : a >= 10 ? 1 : 2) + ' mA';
+}
+function fmtP(p) {
+  p = zero(p);
+  if (Math.abs(p) >= 1) return fmt(p, 2) + ' W';
+  const m = p * 1000;
+  return fmt(m, Math.abs(m) >= 100 ? 0 : 1) + ' mW';
+}
+function fmtR(r) { return r >= 1000 ? fmt(r / 1000, r % 1000 === 0 ? 0 : 1) + ' kΩ' : fmt(r, 0) + ' Ω'; }
+
+// Faixas coloridas do resistor: dois dígitos + multiplicador (10^n)
+function bandas(ohms) {
+  const exp = Math.floor(Math.log10(ohms)) - 1;
+  const dig = Math.round(ohms / Math.pow(10, exp));
+  return [Math.floor(dig / 10), dig % 10, exp];
+}
+
+
+/* ═══════════════ 6. EXEMPLOS ═══════════════
+   Circuitos prontos, montados por código. Servem de material pra aula e
+   também mostram como criar pontos, fios e junções na mão. */
+
+const _term = (c, i) => criarPonto(0, 0, { comp: c.id, term: i });     // ponto preso a um terminal
+// Fio de "ini" até "fim" passando por dobras nas coordenadas de "vias"
+function _cadeia(ini, vias, fim, cor) {
+  let ant = ini;
+  for (const [x, y] of vias) { const p = criarPonto(x, y); criarFio(ant, p, cor); ant = p; }
+  criarFio(ant, fim, cor);
+}
+
+const EXEMPLOS = {
+  // Duas lâmpadas na mesma "estrada": a corrente passa por uma e depois pela outra
+  serie() {
+    S = novoEstado();
+    const bat = novoComp('bateria', 200, 320);
+    const l1 = novoComp('lampada', 380, 160), l2 = novoComp('lampada', 580, 160);
+    _cadeia(_term(bat, 0), [[180, 160]], _term(l1, 0), 'vermelho');
+    _cadeia(_term(l1, 1), [], _term(l2, 0), 'azul');
+    _cadeia(_term(l2, 1), [[700, 160], [700, 240], [220, 240]], _term(bat, 1), 'preto');
+  },
+  // Duas lâmpadas em "ramos" separados: cada uma recebe os 9V inteiros.
+  // As duas bolinhas escuras são JUNÇÕES (fio ligado em fio).
+  paralelo() {
+    S = novoEstado();
+    const bat = novoComp('bateria', 200, 320);
+    const a = novoComp('lampada', 440, 180), b = novoComp('lampada', 440, 300);
+    const j1 = criarPonto(340, 180), j2 = criarPonto(560, 300);
+    _cadeia(_term(bat, 0), [[180, 180]], j1, 'vermelho');
+    _cadeia(j1, [], _term(a, 0), 'vermelho');
+    _cadeia(j1, [[340, 300]], _term(b, 0), 'vermelho');
+    _cadeia(_term(bat, 1), [[220, 240], [260, 240], [260, 420], [560, 420]], j2, 'preto');
+    _cadeia(j2, [], _term(b, 1), 'preto');
+    _cadeia(j2, [[560, 180]], _term(a, 1), 'preto');
+  },
+  // O básico do LED: sempre com um resistor limitando a corrente
+  led() {
+    S = novoEstado();
+    const bat = novoComp('bateria', 200, 320);
+    const r = novoComp('resistor', 400, 160), d = novoComp('led', 560, 160);
+    _cadeia(_term(bat, 0), [[180, 160]], _term(r, 0), 'vermelho');
+    _cadeia(_term(r, 1), [], _term(d, 0), 'verde');
+    _cadeia(_term(d, 1), [[660, 160], [660, 240], [220, 240]], _term(bat, 1), 'preto');
+  }
+};
+
+
+/* ═══════════════ 7. DESENHO ═══════════════
+   Toda vez que algo muda, eu monto de novo o SVG inteiro como um texto
+   gigante e jogo dentro da tela (cena.innerHTML = ...). Parece exagero, mas
+   com poucos componentes é rápido e deixa o código simples: o desenho é sempre
+   um reflexo direto do estado S.
+
+   SVG em 30 segundos (você disse que HTML é território novo, então aí vai):
+     • <svg> é uma "folha" de desenho vetorial dentro da página.
+     • <line>, <circle>, <rect>, <path>, <text> são as formas básicas.
+     • <g> agrupa formas, e o atributo transform move / gira / escala o grupo.
+     • Cores e espessuras vão em atributos (fill, stroke, stroke-width)
+       ou em classes CSS (o CSS está lá em cima, dentro de <style>).
+   🔎 Pesquise: "SVG básico", "SVG transform translate rotate", "SVG path d attribute"
+   ═══════════════════════════════════════════════ */
+
+const $ = s => document.querySelector(s);          // atalho: $('#tela') = pega o elemento com id="tela"
+const tela = $('#tela'), mundoEl = $('#mundo'), cena = $('#cena');
+
+// Quão "acesa" está a lâmpada/LED, de 0 (apagada) a 1 (brilho total).
+// O olho humano não enxerga brilho de forma linear, então uso uma potência
+// (0,6 e 0,7) pra deixar valores baixos mais visíveis.
+function brilhoDe(c, r) {
+  if (!r || U.queimados[c.id]) return 0;
+  if (c.tipo === 'lampada') return Math.min(1, Math.pow(Math.max(0, r.p / (LAMPADA.V * LAMPADA.I)), 0.6));
+  if (c.tipo === 'led') return Math.min(1, Math.pow(Math.max(0, r.i / LED_I_NOM), 0.7));
+  return 0;
+}
+
+// Texto SVG que não gira junto com o componente (senão ficaria de cabeça pra baixo)
+const txt = (x, y, t, tam, cor, deg) =>
+  `<text transform="translate(${x} ${y}) rotate(${deg})" text-anchor="middle" font-size="${tam}" font-weight="700" fill="${cor}">${t}</text>`;
+
+// O desenho de cada componente, em coordenadas locais (centro = 0,0).
+// "r" é o resultado da simulação daquele componente (ou null se parada).
+function corpoComp(c, r) {
+  const b = brilhoDe(c, r);
+  const aceso = b > 0.03;
+  const queimou = !!U.queimados[c.id];
+  const deg = -90 * c.rot;
+  let s = '';
+
+  switch (c.tipo) {
+    case 'bateria':
+      s += `<line x1="-20" y1="-60" x2="-20" y2="-50" class="haste"/><line x1="20" y1="-60" x2="20" y2="-50" class="haste"/>`;
+      s += `<rect x="-30" y="-52" width="60" height="110" rx="9" fill="#39404d" stroke="#1d2129" stroke-width="2"/>`;
+      s += `<path d="M-30 -24V-43a9 9 0 0 1 9-9H21a9 9 0 0 1 9 9V-24Z" fill="#d1a72a"/>`;   // "tampa" dourada
+      s += txt(-20, -31, '+', 16, '#a4171c', deg) + txt(20, -31, '−', 16, '#1d2129', deg);
+      s += txt(0, 20, '9V', 24, '#ffffff', deg);
+      break;
+
+    case 'lampada': {
+      if (aceso) s += `<circle r="${34 + 22 * b}" fill="#ffc933" opacity="${(0.25 + 0.6 * b).toFixed(2)}" filter="url(#desfoque)"/>`;   // brilho em volta
+      s += `<line x1="-60" y1="0" x2="-26" y2="0" class="perna"/><line x1="26" y1="0" x2="60" y2="0" class="perna"/>`;
+      const vidro = aceso ? `rgba(255,236,150,${(0.3 + 0.6 * b).toFixed(2)})` : queimou ? 'rgba(70,70,70,.35)' : 'rgba(186,208,224,.4)';
+      s += `<circle r="27" fill="${vidro}" stroke="#7d8b99" stroke-width="2.5"/>`;
+      const fil = queimou ? '#555' : aceso ? `hsl(${34 + 16 * b}, 100%, ${52 + 22 * b}%)` : '#7d8b99';   // filamento esquenta e muda de cor
+      s += `<path d="M-14 -14L14 14M-14 14L14 -14" stroke="${fil}" stroke-width="3" stroke-linecap="round"/>`;
+      break;
+    }
+
+    case 'led': {
+      const cor = LEDS[c.cor].cor;
+      if (aceso) s += `<circle r="${26 + 18 * b}" fill="${cor}" opacity="${(0.3 + 0.6 * b).toFixed(2)}" filter="url(#desfoque)"/>`;
+      s += `<line x1="-40" y1="0" x2="-14" y2="0" class="perna"/><line x1="14" y1="0" x2="40" y2="0" class="perna"/>`;
+      s += `<circle r="20" fill="#ffffff" opacity=".92"/>`;   // fundo branco pra cor aparecer igual no tema escuro
+      s += `<circle r="20" fill="${queimou ? '#3a3a3a' : cor}" opacity="${queimou ? 0.6 : aceso ? (0.75 + 0.25 * b).toFixed(2) : 0.38}" stroke="#5d6b79" stroke-width="2"/>`;
+      s += `<path d="M-7 -9V9L8 0ZM8 -9V9" fill="#1d2129" stroke="#1d2129" stroke-width="2.4" stroke-linejoin="round"/>`;   // símbolo do diodo
+      s += txt(-30, -7, '+', 12, '#5d6b79', deg);
+      if (aceso) s += `<path d="M13 -19L21 -29M23 -13L33 -21" stroke="${cor}" stroke-width="2.5" stroke-linecap="round" opacity="${b.toFixed(2)}"/>`;
+      break;
+    }
+
+    case 'resistor': {
+      s += `<line x1="-40" y1="0" x2="-24" y2="0" class="perna"/><line x1="24" y1="0" x2="40" y2="0" class="perna"/>`;
+      s += `<rect x="-24" y="-9" width="48" height="18" rx="8" fill="${queimou ? '#3b3430' : '#e3c58f'}" stroke="#8a7146" stroke-width="2"/>`;
+      if (!queimou) {
+        const [d1, d2, m] = bandas(c.ohms);
+        [[-14, d1], [-6, d2], [2, m]].forEach(([x, d]) => { s += `<rect x="${x}" y="-9" width="5" height="18" fill="${CORES_BANDA[d]}"/>`; });
+        s += `<rect x="13" y="-9" width="4" height="18" fill="#d4af37"/>`;   // faixa dourada = tolerância 5%
+      }
+      break;
+    }
+  }
+
+  // Queimou: um X vermelho e uma fumacinha
+  if (queimou && c.tipo !== 'bateria') {
+    s += `<path d="M-12 -12L12 12M12 -12L-12 12" stroke="#d64545" stroke-width="4" stroke-linecap="round"/>`;
+    s += `<circle cx="-6" cy="-34" r="5" fill="#777" opacity=".45"/><circle cx="4" cy="-44" r="7" fill="#777" opacity=".3"/>`;
+  }
+  return s;
+}
+
+// <g transform="translate(x y) rotate(graus)"> = "leva esse grupo pra posição x,y e gira"
+const svgComp = (c, r) => `<g transform="translate(${c.x} ${c.y}) rotate(${90 * c.rot})">${corpoComp(c, r)}</g>`;
+
+// Fio = duas linhas empilhadas: uma escura e mais grossa (borda), uma colorida por cima
+function svgFio(f, realce) {
+  const a = posPonto(S.pontos[f.a]), b = posPonto(S.pontos[f.b]);
+  const pos = `x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"`;
+  let s = '';
+  if (realce === 'sel') s += `<line ${pos} class="fio-realce"/>`;
+  if (realce === 'hov') s += `<line ${pos} class="fio-realce leve"/>`;
+  s += `<line ${pos} class="fio-borda"/><line ${pos} class="fio" stroke="${CORES_FIO[f.cor] || CORES_FIO.vermelho}"/>`;
+  return s;
+}
+
+// Bolinhas nos pontos dos fios (menos nos que estão presos em terminais):
+//   1 fio  → ponta solta (anel laranja)   2 fios → dobra (pontinho)
+//   3+ fios → junção (bolinha escura, o "fio ligado em fio")
+function svgPontos(grauMap, pontosSel) {
+  let s = '';
+  for (const p of Object.values(S.pontos)) {
+    if (p.attach) continue;
+    const g = grauMap[p.id] || 0;
+    if (g === 0) continue;
+    if (g === 1) s += `<circle cx="${p.x}" cy="${p.y}" r="5.5" fill="#fff" stroke="#ee7d1f" stroke-width="2.5"/>`;
+    else if (g === 2) s += `<circle cx="${p.x}" cy="${p.y}" r="${pontosSel.has(p.id) ? 5 : 4}" fill="#fff" stroke="${pontosSel.has(p.id) ? '#0a7bd1' : 'rgba(0,0,0,.45)'}" stroke-width="2"/>`;
+    else s += `<circle cx="${p.x}" cy="${p.y}" r="6.5" fill="#20242b" stroke="#fff" stroke-width="2"/>`;
+  }
+  return s;
+}
+
+// Os terminais ficam POR CIMA dos fios: assim o fio parece "entrar" no terminal
+function svgTerminais() {
+  let s = '';
+  for (const c of Object.values(S.comps)) {
+    TIPOS[c.tipo].term.forEach((_, i) => {
+      const p = posTerminal(c, i);
+      let fill = '#e6ecf1', stroke = '#5b6673';
+      if (c.tipo === 'bateria') { if (i === 0) { fill = '#ffc9c4'; stroke = '#b3261e'; } else { fill = '#d9dde2'; stroke = '#1d2129'; } }
+      s += `<circle cx="${p.x}" cy="${p.y}" r="6" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+    });
+  }
+  return s;
+}
+
+// Anel azul de "vai ligar aqui" (aparece no alvo debaixo do mouse)
+function svgAneis() {
+  const h = U.hover;
+  if (!h || h.tipo === 'comp') return '';
+  const ativo = U.fio || (U.arrasto && U.arrasto.tipo === 'ponto');
+  if (h.tipo === 'fio' && !ativo) return '';
+  return `<circle cx="${h.x}" cy="${h.y}" r="10" class="anel"/>`;
+}
+
+// Etiquetinha com tensão e corrente, embaixo do componente
+function svgTag(c, r) {
+  const l = limitesComp(c);
+  const erro = !!U.queimados[c.id];
+  const texto = erro ? 'queimou' : `${fmtV(r.v)} | ${fmtI(r.i)}`;
+  const w = texto.length * 6.4 + 16;
+  return `<g transform="translate(${(l.x0 + l.x1) / 2} ${l.y1 + 12})"><rect x="${-w / 2}" y="-10" width="${w}" height="20" rx="10" class="tag${erro ? ' tag-erro' : ''}"/><text y="4" text-anchor="middle" class="tag-txt">${texto}</text></g>`;
+}
+
+// Ícone pequeno de cada componente pra paleta (reaproveita o mesmo desenho!)
+function iconeComp(tipo) {
+  const c = { id: -1, tipo, x: 0, y: 0, rot: 0, ohms: 330, cor: 'vermelho' };
+  const terms = TIPOS[tipo].term.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="6" fill="#e6ecf1" stroke="#5b6673" stroke-width="2"/>`).join('');
+  return `<svg viewBox="-72 -72 144 144" width="68" height="68" aria-hidden="true">${corpoComp(c, null)}${terms}</svg>`;
+}
+
+
+// desenhar() é chamada no máximo 1 vez por quadro (requestAnimationFrame).
+// Se a simulação está ligada, ela roda a física antes de desenhar.
+let agendado = false;
+function pedirDesenho() {
+  if (!agendado) { agendado = true; requestAnimationFrame(desenhar); }
+}
+
+function desenhar() {
+  agendado = false;
+
+  // Seleção que aponta pra coisa que já não existe (apagou, desfez...) some
+  if (U.sel && ((U.sel.tipo === 'comp' && !S.comps[U.sel.id]) || (U.sel.tipo === 'fio' && !S.fios[U.sel.id]))) U.sel = null;
+
+  if (U.simulando) simular();
+  const res = U.simulando ? U.res : null;
+  const comps = Object.values(S.comps);
+  let h = '';
+
+  // Camada 1: componentes
+  for (const c of comps) h += svgComp(c, res && res[c.id]);
+  for (const c of comps) {
+    if (U.sel && U.sel.tipo === 'comp' && U.sel.id === c.id) {
+      const l = limitesComp(c);
+      h += `<rect x="${l.x0}" y="${l.y0}" width="${l.x1 - l.x0}" height="${l.y1 - l.y0}" rx="10" class="selecao"/>`;
+    }
+  }
+
+  // Camada 2: fios (por cima dos componentes)
+  const sel = new Set(), hov = new Set();
+  if (U.sel && U.sel.tipo === 'fio') cadeiaDoFio(U.sel.id).forEach(id => sel.add(id));
+  if (U.hover && U.hover.tipo === 'fio' && !U.fio && !U.arrasto) cadeiaDoFio(U.hover.fio.id).forEach(id => hov.add(id));
+  const grau = {}, pontosSel = new Set();
+  for (const f of Object.values(S.fios)) {
+    grau[f.a] = (grau[f.a] || 0) + 1;
+    grau[f.b] = (grau[f.b] || 0) + 1;
+    if (sel.has(f.id)) { pontosSel.add(f.a); pontosSel.add(f.b); }
+    h += svgFio(f, sel.has(f.id) ? 'sel' : hov.has(f.id) ? 'hov' : null);
+  }
+
+  // Camada 3: bolinhas, terminais, anel de destaque e etiquetas
+  h += svgPontos(grau, pontosSel);
+  h += svgTerminais();
+  h += svgAneis();
+  if (res && U.mostrarValores) for (const c of comps) h += svgTag(c, res[c.id]);
+
+  cena.innerHTML = h;
+  mundoEl.setAttribute('transform', `translate(${U.view.tx} ${U.view.ty}) scale(${U.view.k})`);
+
+  atualizarInterface(res);
+  if (!U.arrasto && !U.fio) guardar();
+}
+
+
+/* ═══════════════ 8. MOUSE, TECLADO E TOQUE ═══════════════
+   Aqui eu NÃO uso os eventos do SVG em cada forma (clicar no <circle> etc.).
+   Em vez disso escuto o mouse na tela toda e descubro "o que está debaixo do
+   cursor" fazendo a conta na mão (alvoEm). Como o desenho é refeito o tempo
+   todo, isso é bem mais estável do que grudar eventos em elementos que somem
+   e reaparecem a cada quadro.
+
+   Usei "pointer events" (pointerdown / pointermove / pointerup): funcionam
+   igual pra mouse, caneta e dedo na tela.
+   🔎 Pesquise: "pointer events JavaScript", "addEventListener", "requestAnimationFrame"
+   ═══════════════════════════════════════════════ */
+
+// ── Desfazer (Ctrl+Z) e salvamento automático ──
+// Como o circuito S é só dado, "tirar uma foto" dele é transformar em texto (JSON).
+// 🔎 Pesquise: "JSON.stringify JSON.parse", "localStorage"
+const hist = [];
+function salvarHist() { hist.push(JSON.stringify(S)); if (hist.length > 80) hist.shift(); }
+function desfazer() {
+  const agora = JSON.stringify(S);
+  while (hist.length) {
+    const s = hist.pop();
+    if (s === agora) continue;                       // "foto" igual ao estado atual não desfaz nada
+    S = JSON.parse(s);
+    U.fio = null; U.arrasto = null; U.sel = null;
+    pedirDesenho();
+    return;
+  }
+}
+
+const CHAVE = 'simulador-circuitos-v1';
+let ultimoGuardado = '';
+function guardar() {
+  try {
+    const s = JSON.stringify(S);
+    if (s !== ultimoGuardado) { localStorage.setItem(CHAVE, s); ultimoGuardado = s; }
+  } catch (e) { /* sem localStorage (janela anônima, por ex.): tudo bem, só não salva */ }
+}
+function carregarGuardado() {
+  try {
+    const o = JSON.parse(localStorage.getItem(CHAVE));
+    if (o && o.comps && o.pontos && o.fios) S = o;
+  } catch (e) { }
+}
+
+
+// ── Do pixel da tela pras coordenadas do "mundo" (levando pan e zoom em conta) ──
+function mundo(e) {
+  const r = tela.getBoundingClientRect();
+  const sx = e.clientX - r.left, sy = e.clientY - r.top;
+  return {
+    x: (sx - U.view.tx) / U.view.k, y: (sy - U.view.ty) / U.view.k, sx, sy,
+    dentro: sx >= 0 && sy >= 0 && sx <= r.width && sy <= r.height
+  };
+}
+
+// O que está debaixo do ponto (x,y)? Ordem de prioridade:
+//   terminal > ponto de fio > fio > componente.
+// "ign" lista coisas a ignorar (o fio que estou desenhando não pode ser alvo de si mesmo).
+// Os raios são em pixels da TELA, por isso divido pelo zoom (k).
+function alvoEm(x, y, ign = {}) {
+  const k = U.view.k, ip = ign.pontos || [], iF = ign.fios || [];
+  let melhor = null, dm = 13 / k;
+
+  for (const c of Object.values(S.comps)) for (let i = 0; i < 2; i++) {
+    const p = posTerminal(c, i), d = Math.hypot(p.x - x, p.y - y);
+    if (d < dm) { dm = d; melhor = { tipo: 'terminal', comp: c, term: i, x: p.x, y: p.y }; }
+  }
+  if (melhor) return melhor;
+
+  dm = 10 / k;
+  for (const p of Object.values(S.pontos)) {
+    if (p.attach || ip.includes(p.id)) continue;
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < dm) { dm = d; melhor = { tipo: 'ponto', ponto: p, x: p.x, y: p.y }; }
+  }
+  if (melhor) return melhor;
+
+  dm = 8 / k;
+  for (const f of Object.values(S.fios)) {
+    if (iF.includes(f.id)) continue;
+    const q = distPontoSegmento(x, y, posPonto(S.pontos[f.a]), posPonto(S.pontos[f.b]));
+    if (q.d < dm) { dm = q.d; melhor = { tipo: 'fio', fio: f, x: q.x, y: q.y }; }
+  }
+  if (melhor) return melhor;
+
+  // Componente: "desgiro" o ponto pra dentro do sistema de coordenadas do componente
+  // e vejo se cai dentro da caixa dele. Começo pelo último (o que está por cima).
+  for (const c of Object.values(S.comps).reverse()) {
+    const [lx, ly] = girar(x - c.x, y - c.y, (4 - c.rot) & 3);
+    const [x0, y0, x1, y1] = TIPOS[c.tipo].caixa;
+    if (lx >= x0 && lx <= x1 && ly >= y0 && ly <= y1) return { tipo: 'comp', comp: c, x, y };
+  }
+  return null;
+}
+
+const ignorarFio = f => ({ pontos: [f.ponta], fios: [f.fio] });
+
+
+// ── Ligar coisas: o coração do "fio em fio" ──
+// Pega um ponto (a ponta de um fio) e liga no alvo:
+//   terminal → o ponto passa a estar preso ao terminal
+//   ponto    → os dois pontos viram um só
+//   fio      → parto o fio de baixo em dois, crio uma junção e fundo a ponta nela
+function conectarPonto(id, alvo) {
+  if (alvo.tipo === 'terminal') {
+    S.pontos[id].attach = { comp: alvo.comp.id, term: alvo.term };
+  } else if (alvo.tipo === 'ponto') {
+    if (alvo.ponto.id !== id) fundirPontos(alvo.ponto.id, id);
+  } else if (alvo.tipo === 'fio') {
+    const novo = dividirFio(alvo.fio.id, alvo.x, alvo.y);
+    fundirPontos(novo, id);
+  }
+}
+
+
+// ── Desenhar um fio ──
+// Dois jeitos de usar (os dois funcionam):
+//   ARRASTAR: aperta num terminal, arrasta e solta no destino.
+//   CLICAR:   clica no terminal (o fio "gruda" no cursor), clica no vazio pra
+//             fazer uma dobra, e clica no destino pra terminar. Esc encerra.
+// U.fio guarda o fio em andamento:
+//   fio = id do segmento que segue o mouse   ponta = id do ponto solto na ponta dele
+//   origem = ponto onde ele começa           modoClique = já virou o modo "clicar"?
+function iniciarFio(alvo, m) {
+  salvarHist();
+  let origem;
+  if (alvo && alvo.tipo === 'terminal') origem = criarPonto(0, 0, { comp: alvo.comp.id, term: alvo.term });
+  else if (alvo && alvo.tipo === 'ponto') origem = alvo.ponto.id;                 // continua a partir de uma ponta/junção
+  else if (alvo && alvo.tipo === 'fio') origem = dividirFio(alvo.fio.id, alvo.x, alvo.y);   // nasce no meio de outro fio
+  else origem = criarPonto(snap(m.x), snap(m.y));                                  // nasce no vazio
+  const ponta = criarPonto(m.x, m.y);
+  const fio = criarFio(origem, ponta, U.cor);
+  U.fio = { fio, ponta, origem, x0: m.x, y0: m.y, arrastou: false, modoClique: false };
+  U.sel = null;
+}
+
+// A ponta do fio segue o mouse; se tem um alvo por perto, ela "gruda" nele
+function moverPontaDoFio(m) {
+  const f = U.fio;
+  if (!f.arrastou && Math.hypot(m.x - f.x0, m.y - f.y0) * U.view.k > 6) f.arrastou = true;
+  const alvo = alvoEm(m.x, m.y, ignorarFio(f));
+  U.hover = alvo;
+  const p = S.pontos[f.ponta];
+  if (alvo && alvo.tipo !== 'comp') { p.x = alvo.x; p.y = alvo.y; }
+  else { p.x = snap(m.x); p.y = snap(m.y); }
+}
+
+// Cancela o segmento que está seguindo o mouse (as dobras já feitas ficam)
+function terminarFioAqui() {
+  const f = U.fio;
+  if (!f) return;
+  delete S.fios[f.fio];
+  delete S.pontos[f.ponta];
+  U.fio = null;
+  limparPontosSoltos();
+}
+
+function finalizarFio(m) {
+  const f = U.fio;
+  const alvo = alvoEm(m.x, m.y, ignorarFio(f));
+  const origem = S.pontos[f.origem];
+
+  if (!alvo || alvo.tipo === 'comp') {                       // soltou no vazio: fica uma ponta solta
+    if (dist(posPonto(origem), posPonto(S.pontos[f.ponta])) < 5) terminarFioAqui();   // mas fio de tamanho zero não vale
+    else U.fio = null;
+    return;
+  }
+  const mesmoTerminal = alvo.tipo === 'terminal' && origem.attach &&
+    origem.attach.comp === alvo.comp.id && origem.attach.term === alvo.term;
+  if (mesmoTerminal) { terminarFioAqui(); return; }          // ligar um terminal nele mesmo: ignora
+
+  const idPonta = f.ponta;
+  U.fio = null;
+  conectarPonto(idPonta, alvo);
+  limparPontosSoltos();
+}
+
+// Modo "clicar": cada clique novo decide o que fazer
+function cliqueNoModoClique(m) {
+  const f = U.fio;
+  const alvo = alvoEm(m.x, m.y, ignorarFio(f));
+  if (alvo && alvo.tipo !== 'comp') { finalizarFio(m); return; }              // clicou num destino: pronto
+  if (dist(m, posPonto(S.pontos[f.origem])) < 8 / U.view.k) { terminarFioAqui(); return; }   // clicou de novo no último ponto: encerra
+  const dobra = f.ponta;                                                      // clicou no vazio: a ponta vira dobra fixa
+  const nova = criarPonto(m.x, m.y);
+  const fio = criarFio(dobra, nova, U.cor);
+  U.fio = { fio, ponta: nova, origem: dobra, x0: m.x, y0: m.y, arrastou: false, modoClique: true };
+}
+
+
+// ── Componentes novos vindos da paleta ──
+function centroVisivel() {
+  const r = tela.getBoundingClientRect();
+  const n = Object.keys(S.comps).length % 6;                 // desloca um pouquinho pra não empilhar tudo no mesmo lugar
+  return { x: snap((r.width / 2 - U.view.tx) / U.view.k, 20) + n * 20, y: snap((r.height / 2 - U.view.ty) / U.view.k, 20) + n * 20 };
+}
+function adicionarNoCentro(tipo) {
+  salvarHist();
+  const ctr = centroVisivel();
+  const c = novoComp(tipo, ctr.x, ctr.y);
+  U.sel = { tipo: 'comp', id: c.id };
+  pedirDesenho();
+}
+// Apertou num item da paleta: cria o componente e já começa a arrastá-lo
+function iniciarNovoComp(tipo, e) {
+  e.preventDefault();
+  salvarHist();
+  const ctr = centroVisivel();
+  const c = novoComp(tipo, ctr.x, ctr.y);
+  U.sel = { tipo: 'comp', id: c.id };
+  U.arrasto = { tipo: 'comp', id: c.id, dx: 0, dy: 0, novo: true, saiu: false, cx: e.clientX, cy: e.clientY };
+  pedirDesenho();
+}
+
+
+// ── Apertar o botão do mouse ──
+function aoPressionar(e) {
+  const m = mundo(e);
+  if (e.button === 2) { if (U.fio && U.fio.modoClique) terminarFioAqui(); pedirDesenho(); return; }   // botão direito encerra fio
+  if (e.button === 1) {                                                                            // botão do meio = mover a tela
+    U.arrasto = { tipo: 'pan', sx: e.clientX, sy: e.clientY, tx: U.view.tx, ty: U.view.ty };
+    e.preventDefault(); return;
+  }
+  if (e.button !== 0) return;
+  e.preventDefault();
+
+  if (U.fio && U.fio.modoClique) { cliqueNoModoClique(m); pedirDesenho(); return; }
+
+  const alvo = alvoEm(m.x, m.y);
+
+  // Terminal: em qualquer modo, começa um fio
+  if (alvo && alvo.tipo === 'terminal') { iniciarFio(alvo, m); pedirDesenho(); return; }
+
+  // Componente: em qualquer modo, seleciona e arrasta
+  if (alvo && alvo.tipo === 'comp') {
+    const c = alvo.comp;
+    salvarHist();
+    U.sel = { tipo: 'comp', id: c.id };
+    U.arrasto = { tipo: 'comp', id: c.id, dx: c.x - m.x, dy: c.y - m.y };
+    pedirDesenho(); return;
+  }
+
+  if (U.modo === 'fio') {                                    // modo Fio: começa fio de qualquer lugar
+    iniciarFio(alvo, m); pedirDesenho(); return;
+  }
+
+  // Modo Selecionar
+  if (alvo && alvo.tipo === 'ponto') {                       // arrastar uma dobra/ponta/junção
+    salvarHist();
+    U.sel = null;
+    U.arrasto = { tipo: 'ponto', id: alvo.ponto.id };
+  } else if (alvo && alvo.tipo === 'fio') {                  // clicar num fio seleciona; arrastar cria uma dobra
+    U.sel = { tipo: 'fio', id: alvo.fio.id };
+    U.arrasto = { tipo: 'fio', id: alvo.fio.id, x0: m.x, y0: m.y, px: alvo.x, py: alvo.y };
+  } else {                                                   // vazio: desmarca e move a tela
+    U.sel = null;
+    U.arrasto = { tipo: 'pan', sx: e.clientX, sy: e.clientY, tx: U.view.tx, ty: U.view.ty };
+  }
+  pedirDesenho();
+}
+
+// ── Mexer o mouse ──
+function aoMover(e) {
+  const m = mundo(e);
+  const a = U.arrasto;
+
+  if (a) {
+    if (a.tipo === 'pan') {
+      U.view.tx = a.tx + (e.clientX - a.sx);
+      U.view.ty = a.ty + (e.clientY - a.sy);
+    } else if (a.tipo === 'comp') {
+      const c = S.comps[a.id];
+      if (a.novo && !a.saiu && Math.hypot(e.clientX - a.cx, e.clientY - a.cy) > 6) a.saiu = true;
+      if (!(a.novo && !m.dentro)) { c.x = snap(m.x + a.dx, 20); c.y = snap(m.y + a.dy, 20); }
+    } else if (a.tipo === 'fio') {
+      // Passou de 5px de arrasto em cima de um fio: crio uma dobra ali e passo a arrastá-la
+      if (Math.hypot(m.x - a.x0, m.y - a.y0) * U.view.k > 5) {
+        salvarHist();
+        const novo = dividirFio(a.id, a.px, a.py);
+        U.arrasto = { tipo: 'ponto', id: novo };
+      }
+    }
+    if (U.arrasto && U.arrasto.tipo === 'ponto') {
+      const id = U.arrasto.id, p = S.pontos[id];
+      const alvo = alvoEm(m.x, m.y, { pontos: [id], fios: fiosDoPonto(id).map(f => f.id) });
+      U.hover = alvo;
+      if (alvo && alvo.tipo !== 'comp') { p.x = alvo.x; p.y = alvo.y; }
+      else { p.x = snap(m.x); p.y = snap(m.y); }
+    }
+  } else if (U.fio) {
+    moverPontaDoFio(m);
+  } else {
+    U.hover = m.dentro ? alvoEm(m.x, m.y) : null;
+  }
+  pedirDesenho();
+}
+
+// ── Soltar o botão ──
+function aoSoltar(e) {
+  const m = mundo(e);
+  if (U.fio) {
+    const f = U.fio;
+    if (!f.modoClique) {
+      if (!m.dentro) terminarFioAqui();                      // soltou fora da tela: cancela
+      else if (f.arrastou) finalizarFio(m);                  // arrastou e soltou: liga (ou deixa ponta solta)
+      else f.modoClique = true;                              // só clicou: agora o fio segue o mouse
+    }
+  } else if (U.arrasto) {
+    const a = U.arrasto;
+    U.arrasto = null;
+    if (a.tipo === 'ponto' && m.dentro) {                    // soltou um ponto: liga no que estiver embaixo
+      const alvo = alvoEm(m.x, m.y, { pontos: [a.id], fios: fiosDoPonto(a.id).map(f => f.id) });
+      if (alvo && alvo.tipo !== 'comp') { conectarPonto(a.id, alvo); limparPontosSoltos(); }
+    }
+    if (a.tipo === 'comp' && a.novo && a.saiu && !m.dentro) {   // arrastou da paleta e soltou fora: desistiu
+      delete S.comps[a.id];
+      U.sel = null;
+    }
+  }
+  pedirDesenho();
+}
+
+
+// ── Ações (botões e atalhos) ──
+function girarSel() {
+  if (!U.sel || U.sel.tipo !== 'comp') return;
+  salvarHist();
+  const c = S.comps[U.sel.id];
+  c.rot = (c.rot + 1) & 3;
+}
+
+function excluirSel() {
+  const s = U.sel;
+  if (!s) return;
+  salvarHist();
+  if (s.tipo === 'comp') {
+    // Fios que estavam nos terminais ficam soltos no lugar onde estavam (como desplugar na vida real)
+    for (const p of Object.values(S.pontos)) {
+      if (p.attach && p.attach.comp === s.id) { const q = posPonto(p); p.x = q.x; p.y = q.y; p.attach = null; }
+    }
+    delete S.comps[s.id];
+    delete U.queimados[s.id];
+  } else if (s.tipo === 'fio' && S.fios[s.id]) {
+    for (const id of cadeiaDoFio(s.id)) delete S.fios[id];
+  }
+  limparPontosSoltos();
+  U.sel = null;
+}
+
+function limparTudo() {
+  salvarHist();
+  S = novoEstado();
+  U.sel = null; U.fio = null; U.arrasto = null; U.queimados = {};
+}
+
+function alternarSimulacao() {
+  U.simulando = !U.simulando;
+  if (!U.simulando) { U.res = null; U.avisos = []; U.queimados = {}; }    // parar = trocar tudo por componentes novos
+}
+
+function setModo(m) { U.modo = m; if (m === 'selecionar' && U.fio && U.fio.modoClique) terminarFioAqui(); pedirDesenho(); }
+
+function carregarExemplo(nome) {
+  salvarHist();
+  EXEMPLOS[nome]();
+  U.queimados = {}; U.sel = null; U.fio = null; U.arrasto = null;
+  U.simulando = true;
+  ajustarVista();
+  pedirDesenho();
+}
+
+function escolherCor(nome) {
+  U.cor = nome;
+  if (U.sel && U.sel.tipo === 'fio' && S.fios[U.sel.id]) {   // se tem um fio selecionado, pinta ele
+    salvarHist();
+    for (const id of cadeiaDoFio(U.sel.id)) S.fios[id].cor = nome;
+  }
+  pedirDesenho();
+}
+
+
+// ── Zoom e enquadramento ──
+function zoomEm(fator, sx, sy) {
+  const k0 = U.view.k, k1 = Math.max(0.35, Math.min(2.5, k0 * fator));
+  U.view.tx = sx - (sx - U.view.tx) * (k1 / k0);              // mantém o ponto sob o cursor no mesmo lugar
+  U.view.ty = sy - (sy - U.view.ty) * (k1 / k0);
+  U.view.k = k1;
+  pedirDesenho();
+}
+function zoomCentro(fator) { const r = tela.getBoundingClientRect(); zoomEm(fator, r.width / 2, r.height / 2); }
+
+function ajustarVista() {
+  const r = tela.getBoundingClientRect();
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const c of Object.values(S.comps)) { const l = limitesComp(c); x0 = Math.min(x0, l.x0); y0 = Math.min(y0, l.y0); x1 = Math.max(x1, l.x1); y1 = Math.max(y1, l.y1 + 30); }
+  for (const p of Object.values(S.pontos)) { const q = posPonto(p); x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }
+  if (x0 > x1 || !r.width) { U.view = { tx: 40, ty: 40, k: 1 }; return; }     // nada desenhado: vista padrão
+  const w = x1 - x0 + 120, h = y1 - y0 + 120;
+  const k = Math.max(0.35, Math.min(1.4, r.width / w, r.height / h));
+  U.view = { k, tx: (r.width - (x1 - x0) * k) / 2 - x0 * k, ty: (r.height - (y1 - y0) * k) / 2 - y0 * k };
+}
+
+
+/* ═══════════════ 9. PAINÉIS, BOTÕES E INÍCIO ═══════════════
+   Aqui entra o HTML "de verdade" (barra do topo, painel da direita).
+   Cada elemento tem um id (ex.: id="btnSim") e eu o pego com $('#btnSim').
+   🔎 Pesquise: "document.querySelector", "textContent vs innerHTML", "atributo hidden"
+   ═══════════════════════════════════════════════ */
+
+// Atualiza tudo que é HTML comum (fora do SVG) de acordo com o estado atual
+let ultimoStatus = '';
+function atualizarInterface(res) {
+  const btn = $('#btnSim');
+  btn.textContent = U.simulando ? '■ Parar simulação' : '▶ Iniciar simulação';
+  btn.classList.toggle('ligado', U.simulando);
+  $('#btnSel').classList.toggle('ativo', U.modo === 'selecionar');
+  $('#btnFio').classList.toggle('ativo', U.modo === 'fio');
+  document.querySelectorAll('.cor').forEach(b => b.classList.toggle('ativa', b.dataset.cor === U.cor));
+  $('#btnGirar').disabled = !(U.sel && U.sel.tipo === 'comp');
+  $('#btnExcluir').disabled = !U.sel;
+  $('#btnDesfazer').disabled = !hist.length;
+
+  // Cursor do mouse conforme o que está embaixo dele
+  const h = U.hover;
+  let cur = U.modo === 'fio' ? 'crosshair' : 'default';
+  if (U.arrasto && U.arrasto.tipo === 'pan') cur = 'grabbing';
+  else if (U.fio || (h && h.tipo === 'terminal')) cur = 'crosshair';
+  else if (h && h.tipo === 'ponto') cur = U.modo === 'fio' ? 'crosshair' : 'grab';
+  else if (h && h.tipo === 'fio') cur = U.modo === 'fio' ? 'crosshair' : 'pointer';
+  else if (h && h.tipo === 'comp') cur = 'move';
+  tela.style.cursor = cur;
+
+  // Barra de avisos
+  let chips;
+  if (!U.simulando) chips = [{ nivel: 'info', texto: 'Simulação parada. Clique em “Iniciar simulação” pra ligar o circuito.' }];
+  else if (U.avisos.length) chips = U.avisos;
+  else chips = [{ nivel: 'ok', texto: 'Simulando. Clique num componente pra ver os detalhes dele.' }];
+  const html = chips.map(c => `<div class="chip ${c.nivel}">${c.texto}</div>`).join('');
+  if (html !== ultimoStatus) { $('#status').innerHTML = html; ultimoStatus = html; }
+
+  atualizarProps(res);
+}
+
+// Painel "Detalhes" (lado direito). Os <select> são fixos no HTML; aqui só
+// mostro/escondo e atualizo valores — recriar um <select> a cada quadro
+// fecharia a lista de opções na cara do usuário.
+function atualizarProps(res) {
+  const s = U.sel, vazio = $('#propVazio'), box = $('#propComp');
+  if (s && s.tipo === 'comp' && S.comps[s.id]) {
+    const c = S.comps[s.id], r = res && res[c.id];
+    vazio.hidden = true; box.hidden = false;
+    $('#pNome').textContent = TIPOS[c.tipo].nome;
+    $('#linhaRes').hidden = c.tipo !== 'resistor';
+    $('#linhaCor').hidden = c.tipo !== 'led';
+    if (c.tipo === 'resistor') $('#selRes').value = String(c.ohms);
+    if (c.tipo === 'led') $('#selCor').value = c.cor;
+
+    const linhas = [];
+    if (c.tipo === 'resistor') linhas.push(['Resistência', fmtR(c.ohms)]);
+    if (c.tipo === 'lampada') linhas.push(['Resistência (filamento)', fmtR(LAMPADA.R)], ['Potência nominal', fmt(LAMPADA.V * LAMPADA.I, 1) + ' W']);
+    if (c.tipo === 'led') linhas.push(['Acende a partir de', '≈ ' + fmt(LEDS[c.cor].Vf, 1) + ' V'], ['Corrente ideal', '~20 mA']);
+    if (c.tipo === 'bateria') linhas.push(['Tensão nominal', '9 V'], ['Resistência interna', fmt(BATERIA.rInterna, 1) + ' Ω']);
+    if (r) {
+      linhas.push(['Tensão agora', fmtV(r.v)], ['Corrente agora', fmtI(r.i)], ['Potência agora', fmtP(r.p)]);
+      if (U.queimados[c.id]) linhas.unshift(['Estado', 'queimado']);
+    }
+    $('#leituras').innerHTML = linhas.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+  } else {
+    box.hidden = true; vazio.hidden = false;
+    vazio.textContent = s && s.tipo === 'fio'
+      ? 'Fio selecionado. Delete apaga o fio; clique numa cor lá em cima pra pintá-lo.'
+      : 'Clique num componente pra ver tensão, corrente e potência.';
+  }
+}
+
+// Monta a paleta de componentes (um botão por tipo, com o ícone desenhado)
+function montarPaleta() {
+  const box = $('#paleta');
+  for (const [tipo, def] of Object.entries(TIPOS)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'item';
+    b.innerHTML = iconeComp(tipo) + `<span>${def.nome}</span>`;
+    b.addEventListener('pointerdown', e => iniciarNovoComp(tipo, e));                 // arrastar pro circuito
+    b.addEventListener('click', e => { if (e.detail === 0) adicionarNoCentro(tipo); });   // teclado (Enter/Espaço)
+    box.appendChild(b);
+  }
+}
+
+function montarSelects() {
+  $('#selRes').innerHTML = RESISTORES.map(r => `<option value="${r}">${fmtR(r)}</option>`).join('');
+  $('#selCor').innerHTML = Object.keys(LEDS).map(c => `<option value="${c}">${c[0].toUpperCase() + c.slice(1)}</option>`).join('');
+  $('#selRes').addEventListener('change', e => { if (U.sel && S.comps[U.sel.id]) { salvarHist(); S.comps[U.sel.id].ohms = +e.target.value; pedirDesenho(); } });
+  $('#selCor').addEventListener('change', e => { if (U.sel && S.comps[U.sel.id]) { salvarHist(); S.comps[U.sel.id].cor = e.target.value; pedirDesenho(); } });
+}
+
+function montarCores() {
+  const box = $('#cores');
+  for (const [nome, hex] of Object.entries(CORES_FIO)) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'cor'; b.dataset.cor = nome;
+    b.style.background = hex; b.title = 'Fio ' + nome; b.setAttribute('aria-label', 'Fio ' + nome);
+    b.addEventListener('click', () => escolherCor(nome));
+    box.appendChild(b);
+  }
+}
+
+function ligarEventos() {
+  tela.addEventListener('pointerdown', aoPressionar);
+  window.addEventListener('pointermove', aoMover);            // na janela toda, pra não "perder" o mouse ao sair da tela
+  window.addEventListener('pointerup', aoSoltar);
+  window.addEventListener('pointercancel', aoSoltar);
+  tela.addEventListener('contextmenu', e => e.preventDefault());
+  tela.addEventListener('wheel', e => {
+    e.preventDefault();
+    const m = mundo(e);
+    zoomEm(e.deltaY < 0 ? 1.1 : 1 / 1.1, m.sx, m.sy);
+  }, { passive: false });
+
+  $('#btnSim').addEventListener('click', () => { alternarSimulacao(); pedirDesenho(); });
+  $('#btnSel').addEventListener('click', () => setModo('selecionar'));
+  $('#btnFio').addEventListener('click', () => setModo('fio'));
+  $('#btnGirar').addEventListener('click', () => { girarSel(); pedirDesenho(); });
+  $('#btnExcluir').addEventListener('click', () => { excluirSel(); pedirDesenho(); });
+  $('#btnDesfazer').addEventListener('click', desfazer);
+  $('#btnLimpar').addEventListener('click', () => { limparTudo(); pedirDesenho(); });
+  $('#btnZoomMais').addEventListener('click', () => zoomCentro(1.2));
+  $('#btnZoomMenos').addEventListener('click', () => zoomCentro(1 / 1.2));
+  $('#btnAjustar').addEventListener('click', () => { ajustarVista(); pedirDesenho(); });
+  $('#chkValores').addEventListener('change', e => { U.mostrarValores = e.target.checked; pedirDesenho(); });
+  $('#btnAjuda').addEventListener('click', () => { $('#dicas').hidden = !$('#dicas').hidden; });
+  $('#fecharDicas').addEventListener('click', () => { $('#dicas').hidden = true; });
+  $('#selExemplos').addEventListener('change', e => {
+    if (e.target.value) carregarExemplo(e.target.value);
+    e.target.value = '';                                       // volta pro "Exemplos…"
+  });
+
+  // Atalhos: V = selecionar, W = fio, R = girar, Delete = apagar, Esc = cancelar, Ctrl+Z = desfazer
+  window.addEventListener('keydown', e => {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;   // digitando num campo: não mexe no circuito
+    const k = e.key.toLowerCase();
+    if (e.ctrlKey || e.metaKey) { if (k === 'z') { e.preventDefault(); desfazer(); } return; }
+    if (k === 'escape') { if (U.fio) terminarFioAqui(); else U.sel = null; }
+    else if (k === 'delete' || k === 'backspace') { e.preventDefault(); excluirSel(); }
+    else if (k === 'r') girarSel();
+    else if (k === 'v') setModo('selecionar');
+    else if (k === 'w') setModo('fio');
+    pedirDesenho();
+  });
+
+  new ResizeObserver(() => pedirDesenho()).observe($('#area'));   // redesenha quando a janela muda de tamanho
+}
+
+function iniciar() {
+  montarPaleta();
+  montarSelects();
+  montarCores();
+  ligarEventos();
+  carregarGuardado();
+  ajustarVista();
+  pedirDesenho();
+}
+iniciar();
+
+</script>
+</body>
+</html>
